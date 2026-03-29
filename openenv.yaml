@@ -1,0 +1,13 @@
+environment:
+  name: "q-store-gym"
+  description: "An autonomous dark store operations simulator for Reinforcement Learning (RL) agents."
+  version: "1.0.0"
+  author: "Antigravity"
+  tags: ["q-commerce", "retail", "rl", "gym"]
+api:
+  step_implementation: "env.QStoreEnv.step"
+  reset_implementation: "env.QStoreEnv.reset"
+  state_implementation: "env.QStoreEnv.state"
+spaces:
+  action: "models.ActionSpace"
+  observation: "models.ObservationSpace"

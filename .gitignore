@@ -1,0 +1,18 @@
+# Virtual Environments
+venv/
+.venv/
+env/
+
+# Python Cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment Variables (IMPORTANT: Never push API keys)
+.env
+
+# Trained RL Models (Optional - typically ignored to save space, but you can remove this if you want to push them)
+*.zip
+
+# OS Files
+.DS_Store
