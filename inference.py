@@ -11,7 +11,7 @@ from gym_wrapper import QStoreGymWrapper
 
 load_dotenv()
 
-def run_baseline(task_idx: int, use_gpt: bool = False, use_ppo: bool = False):
+def run_baseline(task_idx: int, use_gpt: bool = False, use_ppo: bool = False, stochastic: bool = False):
     task_name = AVAILABLE_TASKS[task_idx]
     
     if use_ppo:
@@ -30,7 +30,7 @@ def run_baseline(task_idx: int, use_gpt: bool = False, use_ppo: bool = False):
         done = False
         final_score = 0.0
         while not done:
-            action, _states = model.predict(obs, deterministic=True)
+            action, _states = model.predict(obs, deterministic=not stochastic)
             obs, reward, terminated, truncated, info = wrapper.step(action)
             done = terminated or truncated
             final_score = info.get("score", 0.0)
@@ -82,6 +82,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Q-Store Inference")
     parser.add_argument("--use-gpt", action="store_true", help="Use OpenAI GPT-4o API for inference (slow, costs money)")
     parser.add_argument("--use-ppo", action="store_true", help="Use local trained PPO model (fast, free)")
+    parser.add_argument("--stochastic", action="store_true", help="Run inference with stochastic actions (non-deterministic)")
     args = parser.parse_args()
     
     if args.use_gpt and not os.environ.get("OPENAI_API_KEY"):
@@ -97,4 +98,4 @@ if __name__ == "__main__":
             print("No local models found. Running with deterministic baseline.")
             
     for i in range(len(AVAILABLE_TASKS)):
-        run_baseline(i, use_gpt=args.use_gpt, use_ppo=args.use_ppo)
+        run_baseline(i, use_gpt=args.use_gpt, use_ppo=args.use_ppo, stochastic=args.stochastic)

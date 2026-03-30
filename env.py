@@ -123,7 +123,10 @@ class QStoreEnv:
             self.inventory.append(InventoryItem(product_id=p_id, quantity=qty, cost_price=cost, time_to_expiry_steps=100))
                 
         # 4. Resolve Pricing and Sales
-        total_orders = 0
+        max_delivery_capacity = self.available_riders * 4 # Each rider handles 4 orders per step max
+        remaining_capacity = max_delivery_capacity
+        total_missed_orders = 0
+        
         if verbose:
             print("  [Sales Report]")
         for p_id, agent_price in action.pricing.items():
@@ -137,25 +140,29 @@ class QStoreEnv:
             price_ratio = comp_price / max(0.01, agent_price)
             expected_sales = int(demand * 10 * (price_ratio ** 2))
             
+            # The Ghost Delivery Fix: You can only physically process what you can mathematically carry!
+            fulfillable_sales = min(expected_sales, remaining_capacity)
+            missed_logistics = expected_sales - fulfillable_sales
+            total_missed_orders += missed_logistics
+            remaining_capacity -= fulfillable_sales
+            
             # Execute sales 
-            sales_achieved = self._sell_inventory(p_id, expected_sales, agent_price, comp_price, reward_state)
-            total_orders += sales_achieved
+            sales_achieved = self._sell_inventory(p_id, fulfillable_sales, agent_price, comp_price, reward_state)
             
             if verbose:
                 print(f"    - {p_id}: Price=${agent_price:.2f} (Comp=${comp_price:.2f}), DemandIdx={demand:.2f}")
-                print(f"      -> Expected Sales: {expected_sales}, Actual Sold: {sales_achieved}")
+                print(f"      -> Expected Demand: {expected_sales}, Realistically Sold (Bounded): {sales_achieved}")
             
-            if expected_sales > sales_achieved:
-                # Trust penalty due to stockout
-                reward_state.trust_penalty += (expected_sales - sales_achieved) * 0.5
+            stockout_misses = fulfillable_sales - sales_achieved
+            if stockout_misses > 0:
+                # Trust penalty due to strict stockout
+                reward_state.trust_penalty += stockout_misses * 1.0
                 
         # 5. Logistics Check
-        max_delivery_capacity = self.available_riders * 4 # Each rider handles 4 orders per step max
-        if total_orders > max_delivery_capacity:
-            missed_orders = total_orders - max_delivery_capacity
+        if total_missed_orders > 0:
             if verbose:
-                print(f"  [Logistics] Missed {missed_orders} orders due to rider limit! (Total orders: {total_orders}, Capacity: {max_delivery_capacity})")
-            reward_state.logistics_penalty += missed_orders * 1.0 # 1 point per missed order
+                print(f"  [Logistics] Blocked {total_missed_orders} surplus sales physically due to rider limits! Max capacity was {max_delivery_capacity}.")
+            reward_state.logistics_penalty += total_missed_orders * 1.5 # Tighter, heavy fine for surge failure
             
         # 6. Expiry and Overhead
         total_items = 0
@@ -183,15 +190,18 @@ class QStoreEnv:
         
         # Calculate Score
         waste_ratio = min(1.0, self.total_waste_value / max(1.0, (self.total_inventory_cost_at_start + self.total_waste_value)))
-        profit_ratio = max(0.0, self.total_net_profit / self.max_potential_profit)
-        score = max(0.0, profit_ratio - waste_ratio)
-        if score > 1.0: score = 1.0
+        
+        # New robust logic avoiding the infinite score exploit
+        raw_profit_ratio = max(0.0, self.total_net_profit / max(1.0, self.max_potential_profit))
+        profit_ratio_clamped = min(1.0, raw_profit_ratio)
+        
+        score = max(0.0, profit_ratio_clamped - waste_ratio)
         
         if verbose:
             print(f"  [Score Calculation]")
             print(f"    - Net Profit: ${self.total_net_profit:.2f} / Max Potential: ${self.max_potential_profit:.2f}")
             print(f"    - Total Waste Value: ${self.total_waste_value:.2f} / Started With: ${self.total_inventory_cost_at_start:.2f}")
-            print(f"    - Profit Ratio: {profit_ratio:.4f} | Waste Ratio: {waste_ratio:.4f} -> Final Running Score: {score:.4f}")
+            print(f"    - Raw Profit Ratio: {raw_profit_ratio:.4f} | Clamped Profit Ratio: {profit_ratio_clamped:.4f} | Waste Ratio: {waste_ratio:.4f} -> Final Running Score: {score:.4f}")
         
         return StepResult(
             observation=self.state(),

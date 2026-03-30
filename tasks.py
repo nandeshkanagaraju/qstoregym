@@ -29,16 +29,41 @@ def get_task_config(task_name: str) -> Dict[str, Any]:
     elif task_name == "The Strawberry Crisis":
         return {
             "initial_inventory": [
-                {"product_id": "strawberries", "quantity": 200, "cost_price": 4.0, "time_to_expiry_steps": 12}, # Flash expiry event: 12 steps (3 hours)
+                {"product_id": "strawberries", "quantity": 150, "cost_price": 4.0, "time_to_expiry_steps": 10}, # Reduced rottable stock to beatable sizes
                 {"product_id": "milk", "quantity": 100, "cost_price": 2.0, "time_to_expiry_steps": 48}
             ],
-            "initial_riders": 2, # Severe rider shortage
-            "base_demand": 2.0, # High sudden influx
-            "weather_prob": {"sunny": 0.1, "rainy": 0.4, "stormy": 0.5, "cloudy": 0.0}, # Bad weather
-            "special_event_prob": 0.5,
-            "max_steps": 24 # crisis is shorter
+            "initial_riders": 5, # Starts with 5 riders (20 cap/step -> 200 possible in 10 steps!)
+            "base_demand": 2.5, # Sudden influx
+            "weather_prob": {"sunny": 0.1, "rainy": 0.4, "stormy": 0.5, "cloudy": 0.0}, 
+            "special_event_prob": 0.8,
+            "max_steps": 24
+        }
+    elif task_name == "The Weekend Blackout":
+        return {
+            "initial_inventory": [
+                {"product_id": "milk", "quantity": 400, "cost_price": 2.0, "time_to_expiry_steps": 15},
+                {"product_id": "bread", "quantity": 300, "cost_price": 1.5, "time_to_expiry_steps": 15},
+                {"product_id": "chips", "quantity": 250, "cost_price": 1.0, "time_to_expiry_steps": 30}
+            ],
+            "initial_riders": 8, # Enough initial riders to struggle but survive
+            "base_demand": 4.0, # Massive external demand
+            "weather_prob": {"sunny": 0.0, "rainy": 1.0, "stormy": 0.0, "cloudy": 0.0}, # Heavy rain instead of storm to preserve riders
+            "special_event_prob": 1.0, # Guaranteed event
+            "max_steps": 35 
+        }
+    elif task_name == "The Supplier Strike":
+        return {
+            "initial_inventory": [
+                {"product_id": "chips", "quantity": 40, "cost_price": 1.0, "time_to_expiry_steps": 100},
+                {"product_id": "bread", "quantity": 60, "cost_price": 1.5, "time_to_expiry_steps": 100}
+            ],
+            "initial_riders": 10, # Lots of riders available
+            "base_demand": 1.0, 
+            "weather_prob": {"sunny": 1.0, "rainy": 0.0, "stormy": 0.0, "cloudy": 0.0},
+            "special_event_prob": 0.0,
+            "max_steps": 60 # Extremely long depletion episode
         }
     else:
         raise ValueError(f"Unknown task: {task_name}")
 
-AVAILABLE_TASKS = ["The Night Shift", "The Lunch Rush", "The Strawberry Crisis"]
+AVAILABLE_TASKS = ["The Night Shift", "The Lunch Rush", "The Strawberry Crisis", "The Weekend Blackout", "The Supplier Strike"]
