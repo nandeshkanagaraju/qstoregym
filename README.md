@@ -34,6 +34,23 @@ Ensure you have Python 3.10+ installed.
 pip install -r requirements.txt
 ```
 
+### PPO Training
+```bash
+python train.py --device auto
+```
+
+To force GPU training when CUDA is available:
+```bash
+python train.py --device cuda
+```
+
+For AMD Radeon on Windows, install the DirectML backend first:
+```bash
+pip install torch-directml
+python train.py --device dml
+```
+If you use `--device auto`, the script will try CUDA first, then DirectML, then CPU.
+
 ### Baseline Agent Inference (OpenAI `gpt-4o`)
 ```bash
 export OPENAI_API_KEY="your-key"

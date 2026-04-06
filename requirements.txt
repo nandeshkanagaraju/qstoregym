@@ -3,4 +3,15 @@ openai>=1.0.0
 pyyaml
 python-dotenv
 gymnasium
-stable-baselines3
+stable-baselines3[extra]
+torch
+# REST API layer
+fastapi>=0.110.0
+uvicorn[standard]>=0.29.0
+# In-memory rate limiting
+slowapi>=0.1.9
+# Retry logic for external APIs
+tenacity>=8.2.0
+# Lightweight persistence (replace with PostgreSQL in production)
+sqlalchemy>=2.0.0
+aiosqlite>=0.20.0

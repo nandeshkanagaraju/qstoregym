@@ -10,6 +10,8 @@ __pycache__/
 
 # Environment Variables (IMPORTANT: Never push API keys)
 .env
+.env.bak
+.env.*
 
 # Trained RL Models (Optional - typically ignored to save space, but you can remove this if you want to push them)
 *.zip

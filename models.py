@@ -15,13 +15,18 @@ class ObservationSpace(BaseModel):
     available_riders: int
     current_weather: Literal['sunny', 'rainy', 'stormy', 'cloudy']
     special_event_active: bool
+    # Units currently in transit per product (placed but not yet arrived).
+    # Critical for rational sourcing decisions — agent must see what is already on order.
+    pending_orders: Dict[str, int] = Field(default_factory=dict)
 
 class ActionSpace(BaseModel):
-    # Mapping product_id to a new continuous price value
-    pricing: Dict[str, float] = Field(default_factory=dict, description="Dynamic pricing for items")
+    # Mapping product_id to a price MULTIPLIER over cost_price (e.g. 1.5 = 50% markup).
+    # Using multipliers instead of absolute prices makes the action space scale-invariant
+    # across products with different cost bases (chips $1 vs strawberries $4).
+    pricing: Dict[str, float] = Field(default_factory=dict, description="Price multipliers over cost_price per product")
     # Mapping product_id to quantity ordered (arrives after lead time)
     sourcing: Dict[str, int] = Field(default_factory=dict, description="Inventory sourcing quantities")
-    # Mapping product_id to quantity to discard (note: agent discards specific batches, but for simplicity, discards oldest first)
+    # Mapping product_id to quantity to discard (discards oldest batches first)
     waste_management: Dict[str, int] = Field(default_factory=dict, description="Discard quantities for items")
 
 class RewardState(BaseModel):
@@ -31,7 +36,7 @@ class RewardState(BaseModel):
     waste_penalty: float = 0.0
     overhead_penalty: float = 0.0
     logistics_penalty: float = 0.0
-    
+
     @property
     def total_reward(self) -> float:
         return (self.successful_sale_reward + self.efficiency_bonus) - (
@@ -43,5 +48,5 @@ class StepResult(BaseModel):
     reward: float
     reward_breakdown: RewardState
     done: bool
-    score: float  # 0.0 to 1.0 (Store Efficiency Score)
+    score: float  # 0.0 to 1.0 (Store Efficiency Score), meaningful only at episode end
     info: Dict = Field(default_factory=dict)
