@@ -32,7 +32,8 @@ from typing import Any, Dict, List, Optional
 
 from fastapi import Depends, FastAPI, Header, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, HTMLResponse
+from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.errors import RateLimitExceeded
@@ -204,6 +205,15 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+os.makedirs("static", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
+
+@app.get("/", tags=["Frontend"])
+def read_root():
+    """Serves the interactive premium dashboard UI."""
+    with open("static/index.html", "r") as f:
+        return HTMLResponse(content=f.read())
 
 
 # ──────────────────────────────────────────────────────────────
@@ -481,6 +491,17 @@ def place_order(
             state = _get_session(session_id)
             with state.lock:
                 current_step = state.step_count
+                # Try to extract the true RL sell price if available, otherwise fallback.
+                # The RL price was theoretically printed to the UI catalog, but wait:
+                # The UI just passes the click. The real multiplier sits in the last action.
+                
+                # We inject the human buyer's manual order directly into the RL inventory!
+                # Extract the base env from the GymWrapper
+                base_env = getattr(state.env, 'env', None) if hasattr(state.env, 'step') else state.env
+                if hasattr(base_env, 'process_manual_sale'):
+                    fulfilled = base_env.process_manual_sale(body.product_id, body.quantity, unit_price)
+                    if fulfilled < body.quantity:
+                        print(f"API Warning: Manual order demanded {body.quantity} but store only had {fulfilled} in stock!")
         except HTTPException:
             pass
 

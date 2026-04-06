@@ -3,7 +3,9 @@ openai>=1.0.0
 pyyaml
 python-dotenv
 gymnasium
-stable-baselines3[extra]
+stable-baselines3
+tensorboard
+rich
 torch
 # REST API layer
 fastapi>=0.110.0

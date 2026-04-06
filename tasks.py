@@ -39,15 +39,15 @@ def get_task_config(task_name: str) -> Dict[str, Any]:
     elif task_name == "The Strawberry Crisis":
         return {
             "initial_inventory": [
-                {"product_id": "strawberries", "quantity": 150, "cost_price": 4.0, "time_to_expiry_steps": 10},
-                {"product_id": "milk",         "quantity": 100, "cost_price": 2.0, "time_to_expiry_steps": 48},
+                {"product_id": "strawberries", "quantity": 80, "cost_price": 4.0, "time_to_expiry_steps": 15},
+                {"product_id": "milk",         "quantity": 50, "cost_price": 2.0, "time_to_expiry_steps": 48},
             ],
             "product_expiry_steps": {
-                "strawberries": 10,   # critically perishable — restocked batches also expire in 10 steps
+                "strawberries": 15,
                 "milk":         48,
             },
-            "initial_riders": 5,
-            "base_demand": 2.5,  # sudden influx
+            "initial_riders": 10,    # 10 riders: solvable with smart pricing, tough with greedy markup
+            "base_demand": 2.5,
             "weather_prob": {"sunny": 0.1, "rainy": 0.4, "stormy": 0.5, "cloudy": 0.0},
             "special_event_prob": 0.8,
             "max_steps": 24,

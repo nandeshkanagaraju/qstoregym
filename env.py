@@ -275,6 +275,24 @@ class QStoreEnv:
 
         return sales_made
 
+    def process_manual_sale(self, p_id: str, quantity: int, price: float) -> int:
+        """
+        Human-in-the-loop bridge.
+        Instantly deducts inventory and attributes the manual GUI sale profit to the AI's episodic score.
+        Returns the actual number of units fulfilled based on available stock.
+        """
+        # Create a dummy reward state to capture the profit
+        dummy_state = RewardState()
+        
+        # We reuse the FIFO _sell_inventory logic to properly handle rotting batches.
+        sales_achieved = self._sell_inventory(p_id, quantity, price, dummy_state)
+        
+        # Note: self.total_net_profit is already bumped inside _sell_inventory!
+        # Because we used a dummy state, we don't need to add successful_sale_reward into the current tick 
+        # (the tick computes later), but the absolute total_net_profit math tracks it for the final score.
+        print(f"  [MANUAL OVERRIDE] Human Buyer explicitly ordered {sales_achieved}x {p_id} at ${price:.2f}!")
+        return sales_achieved
+
     def _discard_inventory(self, p_id: str, quantity: int, reward_state: RewardState, manual: bool):
         """Discard inventory FIFO (oldest first). Manual discard costs 1.0x, expiry costs 1.5x."""
         remaining_qty = quantity

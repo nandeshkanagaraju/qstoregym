@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Interactive Q-Store Simulator Dashboard">
+    <title>Q-Store Gym Simulator</title>
+    <!-- Modern typography -->
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- FontAwesome for icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <link rel="stylesheet" href="/static/styles.css?v=5">
+</head>
+<body>
+    <div class="ambient-background"></div>
+    
+    <div class="app-layout">
+        
+        <!-- SIDEBAR (Setup & Configuration) -->
+        <aside class="sidebar glass-panel">
+            <div class="brand">
+                <i class="fa-solid fa-store fa-2x brand-icon"></i>
+                <h2>Q-Store <span>HQ</span></h2>
+                <div class="status-indicator">
+                    <span class="pulse-dot"></span>
+                    <span id="connection-status">Online</span>
+                </div>
+            </div>
+
+            <div class="sidebar-section">
+                <h3><i class="fa-solid fa-user-circle"></i> Player Profile</h3>
+                <div id="buyer-status" class="setup-state warning">No User Registered</div>
+                <form id="form-register-buyer">
+                    <input type="text" id="buyer-name" value="Satya" required placeholder="Name">
+                    <button type="submit" class="btn primary btn-sm">Sign In as Buyer</button>
+                    <!-- Hidden fields for API -->
+                    <input type="hidden" id="buyer-email" value="satya@qstore.local">
+                    <input type="hidden" id="buyer-address" value="Hyderabad">
+                </form>
+            </div>
+
+            <div class="sidebar-section">
+                <h3><i class="fa-solid fa-microchip"></i> AI Simulation Engine</h3>
+                <div id="session-status" class="setup-state warning">No Active Session</div>
+                <div class="input-group-vertical">
+                    <select id="rl-task" required>
+                        <option value="The Night Shift">The Night Shift</option>
+                        <option value="The Lunch Rush">The Lunch Rush</option>
+                        <option value="The Strawberry Crisis">The Strawberry Crisis</option>
+                        <option value="The Weekend Blackout">The Weekend Blackout</option>
+                        <option value="The Supplier Strike">The Supplier Strike</option>
+                    </select>
+                    <button id="btn-start-session" class="btn secondary">Boot Environment</button>
+                </div>
+            </div>
+
+            <div class="sidebar-footer">
+                <div class="ai-toggles">
+                    <label class="toggle-control">
+                        <input type="checkbox" id="RL-curriculum">
+                        Use Master AI (Curriculum)
+                    </label>
+                    <label class="toggle-control">
+                        <input type="checkbox" id="RL-stochastic">
+                        Creative Mode (Stochastic)
+                    </label>
+                </div>
+            </div>
+        </aside>
+
+        <!-- MAIN LAYOUT -->
+        <main class="main-content">
+            
+            <!-- Top Dashboard Metrics -->
+            <header class="top-metrics">
+                <div class="metric-card glass-panel">
+                    <i class="fa-solid fa-chart-line metric-icon text-indigo"></i>
+                    <div class="metric-body">
+                        <p class="metric-title">Last Turn Profit (Reward)</p>
+                        <h3 class="metric-value" id="metric-score">0.000</h3>
+                    </div>
+                </div>
+                <div class="metric-card glass-panel">
+                    <i class="fa-solid fa-clock-rotate-left metric-icon text-pink"></i>
+                    <div class="metric-body">
+                        <p class="metric-title">Simulation Step</p>
+                        <h3 class="metric-value" id="metric-steps">0</h3>
+                    </div>
+                </div>
+                <div class="metric-card glass-panel">
+                    <i class="fa-solid fa-truck-fast metric-icon text-success"></i>
+                    <div class="metric-body">
+                        <p class="metric-title">SLA Drop Rate</p>
+                        <h3 class="metric-value" id="metric-sla">0%</h3>
+                    </div>
+                </div>
+            </header>
+
+            <!-- Storefront Catalog -->
+            <section class="storefront">
+                <div class="section-header">
+                    <h2><i class="fa-solid fa-basket-shopping"></i> Live Storefront Catalog</h2>
+                    <p class="subtitle">Prices are actively manipulated by the AI agent per turn.</p>
+                </div>
+                
+                <div id="catalog-grid" class="catalog-grid">
+                    <!-- Products rendered via JS here -->
+                    <div class="glass-panel skeleton-loader">Loading catalog...</div>
+                </div>
+            </section>
+
+            <!-- Bottom Sticky Action Bar -->
+            <div class="action-bar glass-panel">
+                <div class="action-logs">
+                    <p><strong>Latest AI Decision:</strong> <span id="ai-log">Awaiting first turn...</span></p>
+                    <div id="financial-breakdown" style="font-size: 0.85rem; margin-top: 5px; color: var(--text-muted);">
+                        <em>Financial Breakdown: (No data yet)</em>
+                    </div>
+                </div>
+                <button id="btn-rl-decide" class="btn accent pulse-btn" disabled>
+                    <i class="fa-solid fa-forward-step"></i> Advance 15 mins (AI Turn)
+                </button>
+            </div>
+
+        </main>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toast-container"></div>
+
+    <script src="/static/app.js?v=8"></script>
+</body>
+</html>
