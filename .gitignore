@@ -14,7 +14,9 @@ __pycache__/
 .env.*
 
 # Trained RL Models (Optional - typically ignored to save space, but you can remove this if you want to push them)
-*.zip
-
+# Trained RL Models - Uploading required for OpenEnv!
+# *.zip removed so we can upload our models
 # OS Files
 .DS_Store
+checkpoints/
+*.zip
