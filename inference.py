@@ -19,9 +19,18 @@ from tasks import AVAILABLE_TASKS
 load_dotenv()
 
 
-def structured_log(tag: str, **fields) -> None:
-    ordered = OrderedDict(fields.items())
-    print(f"[{tag}] {json.dumps(ordered, separators=(',', ':'), ensure_ascii=True)}", flush=True)
+def log_start(task: str, env: str, model: str) -> None:
+    print(f"[START] task={task} env={env} model={model}", flush=True)
+
+def log_step(step: int, action: str, reward: float, done: bool, error: Optional[str]) -> None:
+    error_val = error if error else "null"
+    done_val = str(done).lower()
+    print(f"[STEP] step={step} action={action} reward={reward:.2f} done={done_val} error={error_val}", flush=True)
+
+def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> None:
+    rewards_str = ",".join(f"{r:.2f}" for r in rewards)
+    success_val = str(success).lower()
+    print(f"[END] success={success_val} steps={steps} score={score:.3f} rewards={rewards_str}", flush=True)
 
 
 def clamp_score(score: float) -> float:
@@ -136,20 +145,15 @@ def run_episode(
     env = QStoreEnv(seed=seed)
     observation = env.reset(task_name, seed=seed)
     actual_agent, model, norm_env, wrapper = select_agent(agent, task_name, curriculum=curriculum)
-
-    structured_log(
-        "START",
-        run_id=run_id,
-        episode_index=episode_index,
-        task=task_name,
-        agent=actual_agent,
-        seed=seed,
-    )
+    log_model_name = model_name if actual_agent == "llm" and model_name else actual_agent
+    
+    log_start(task=task_name, env="qstore", model=log_model_name)
 
     total_reward = 0.0
     step_index = 0
     done = False
     final_score = 0.0
+    rewards_list = []
 
     while not done:
         if actual_agent == "baseline":
@@ -161,30 +165,23 @@ def run_episode(
                 raise RuntimeError("LLM client is not configured.")
             action = llm_policy(client=client, model_name=model_name, observation=observation)
 
+        action_str = json.dumps(summarize_action(action), separators=(',', ':'))
         result = env.step(action, verbose=False)
         step_index += 1
-        total_reward += float(result.reward)
+        current_reward = float(result.reward)
+        total_reward += current_reward
+        rewards_list.append(current_reward)
         final_score = clamp_score(result.score)
         observation = result.observation
         done = result.done
 
-        structured_log(
-            "STEP",
-            run_id=run_id,
-            episode_index=episode_index,
-            task=task_name,
-            agent=actual_agent,
-            seed=seed,
-            step=step_index,
-            reward=round(float(result.reward), 6),
-            cumulative_reward=round(total_reward, 6),
-            score=round(final_score, 6),
-            done=done,
-            action=summarize_action(action),
-        )
+        log_step(step=step_index, action=action_str, reward=current_reward, done=done, error=None)
 
     if norm_env is not None:
         norm_env.close()
+
+    success = final_score > 0.0
+    log_end(success=success, steps=step_index, score=final_score, rewards=rewards_list)
 
     summary = {
         "run_id": run_id,
@@ -198,19 +195,6 @@ def run_episode(
         "net_profit": float(env.total_net_profit),
         "waste_value": float(env.total_waste_value),
     }
-    structured_log(
-        "END",
-        run_id=run_id,
-        episode_index=episode_index,
-        task=task_name,
-        agent=actual_agent,
-        seed=seed,
-        steps=step_index,
-        total_reward=round(total_reward, 6),
-        score=round(final_score, 6),
-        net_profit=round(float(env.total_net_profit), 6),
-        waste_value=round(float(env.total_waste_value), 6),
-    )
     return summary
 
 

@@ -9,7 +9,9 @@ import yaml
 
 from graders import validate_baseline_reproducibility, validate_rl_assets, validate_task_graders
 from tasks import AVAILABLE_TASKS
+from dotenv import load_dotenv
 
+load_dotenv()
 
 ROOT = Path(__file__).resolve().parent
 REQUIRED_ENV_VARS = ["API_BASE_URL", "MODEL_NAME", "HF_TOKEN"]
