@@ -1,3 +1,12 @@
+---
+title: Q-Store Gym
+emoji: 🛒
+colorFrom: blue
+colorTo: green
+sdk: docker
+tags:
+  - openenv
+---
 # Q-Store Gym 🛒
 
 **Q-Store Gym** is an autonomous dark store operations simulator built for Reinforcement Learning (RL) agents. Developed for the OpenEnv Hackathon, this environment serves as a "Digital Twin" of a Q-Commerce warehouse where goods must be delivered in under 10 minutes.
