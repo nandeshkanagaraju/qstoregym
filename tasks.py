@@ -39,17 +39,19 @@ def get_task_config(task_name: str) -> Dict[str, Any]:
     elif task_name == "The Strawberry Crisis":
         return {
             "initial_inventory": [
-                {"product_id": "strawberries", "quantity": 80, "cost_price": 4.0, "time_to_expiry_steps": 15},
-                {"product_id": "milk",         "quantity": 50, "cost_price": 2.0, "time_to_expiry_steps": 48},
+                {"product_id": "strawberries", "quantity": 150, "cost_price": 4.0, "time_to_expiry_steps": 10},
+                {"product_id": "milk",         "quantity": 60,  "cost_price": 2.0, "time_to_expiry_steps": 36},
             ],
             "product_expiry_steps": {
-                "strawberries": 15,
-                "milk":         48,
+                "strawberries": 10,
+                "milk":         36,
             },
-            "initial_riders": 10,    # 10 riders: solvable with smart pricing, tough with greedy markup
-            "base_demand": 2.5,
+            # Demand is still elevated, but rider capacity and shorter expiry make greedy
+            # high-markup policies leave real spoilage on the table.
+            "initial_riders": 7,
+            "base_demand": 1.4,
             "weather_prob": {"sunny": 0.1, "rainy": 0.4, "stormy": 0.5, "cloudy": 0.0},
-            "special_event_prob": 0.8,
+            "special_event_prob": 0.7,
             "max_steps": 24,
         }
     elif task_name == "The Weekend Blackout":

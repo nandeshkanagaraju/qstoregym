@@ -23,6 +23,7 @@ from stable_baselines3.common.callbacks import EvalCallback, CheckpointCallback,
 from stable_baselines3.common.monitor import Monitor
 
 from crisis_wrapper import StrawberryCrisisWrapper
+from gym_wrapper import QStoreGymWrapper
 
 
 MODEL_STEM   = "ppo_The_Strawberry_Crisis"
@@ -63,8 +64,8 @@ def train(total_timesteps: int, device: str, n_envs: int = 8):
     )
     train_env = VecNormalize(train_env, norm_obs=True, norm_reward=True, clip_obs=10.0)
 
-    # --- Eval env (no reward shaping for honest scoring) ---
-    eval_env_raw = DummyVecEnv([lambda: Monitor(StrawberryCrisisWrapper())])
+    # --- Eval env (generic wrapper, no crisis-specific reward shaping) ---
+    eval_env_raw = DummyVecEnv([lambda: Monitor(QStoreGymWrapper(task_name="The Strawberry Crisis"))])
     eval_env = VecNormalize(eval_env_raw, norm_obs=True, norm_reward=False, training=False)
 
     # --- PPO with crisis-tuned hyperparameters ---
@@ -111,7 +112,7 @@ def train(total_timesteps: int, device: str, n_envs: int = 8):
     model.save(MODEL_STEM)
     train_env.save(VECNORM_PATH)
     print(f"\n✅ Saved → {MODEL_STEM}.zip | {VECNORM_PATH}")
-    print("Run `python eval_accuracy.py` to verify the score improved above 0.000.\n")
+    print("Run `python eval_accuracy.py --task \"The Strawberry Crisis\" --n-episodes 20` to benchmark score improvement.\n")
 
 
 if __name__ == "__main__":

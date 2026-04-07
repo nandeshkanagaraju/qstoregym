@@ -24,7 +24,7 @@ The agent visually perceives the complete state of the dark store.
 - `waste_management` (Dict[str, int]): Map of quantities to discard manually to limit rot penalties.
 
 ### Rewards
-The score algorithm returns `(Actual Net Profit / Max Potential Profit) - (Waste Ratio)`. Maximizing sales while keeping absolute 0 waste equals a `1.0` score.
+The score algorithm returns `(Actual Net Profit / Max Potential Profit) - (Waste Ratio)`, where `Max Potential Profit` is the initial-inventory net-profit ceiling at the environment's max allowed markup and `Waste Ratio` is measured against inventory cost basis rather than profit. A `1.0` score means the agent matched that ceiling with zero waste.
 
 ## 🏃 Setup & Quickstart
 

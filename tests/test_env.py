@@ -1,7 +1,7 @@
 import unittest
 import numpy as np
-from env import QStoreEnv
-from models import ActionSpace
+from env import MAX_PRICE_MULTIPLIER, QStoreEnv
+from models import ActionSpace, InventoryItem
 from gym_wrapper import QStoreGymWrapper, OBS_DIM, ACT_DIM, PRODUCTS
 
 
@@ -121,6 +121,17 @@ class TestQStoreEnv(unittest.TestCase):
         # We can't assert waste_penalty == 0 (overhead still fires), but it should be low.
         self.assertGreaterEqual(result.reward_breakdown.waste_penalty, 0)  # no negative penalties
 
+    def test_max_potential_profit_uses_true_net_profit_ceiling(self):
+        """
+        max_potential_profit must be based on achievable net profit at the max allowed
+        markup, not on gross revenue.
+        """
+        expected = (
+            100 * 2.0 * (MAX_PRICE_MULTIPLIER - 1.0) +
+            50 * 1.5 * (MAX_PRICE_MULTIPLIER - 1.0)
+        )
+        self.assertAlmostEqual(self.env.max_potential_profit, expected)
+
     def test_max_potential_profit_frozen_after_sourcing(self):
         """
         max_potential_profit must not grow when the agent places sourcing orders.
@@ -133,6 +144,43 @@ class TestQStoreEnv(unittest.TestCase):
             self.env.max_potential_profit, max_pot_at_reset,
             "max_potential_profit must not change after sourcing orders",
         )
+
+    def test_waste_ratio_does_not_depend_on_profit(self):
+        """
+        Waste ratio should measure wasted inventory cost basis only. Higher profit should
+        not automatically make the same waste less severe.
+        """
+        self.env.inventory = [
+            InventoryItem(product_id="milk", quantity=100, cost_price=2.0, time_to_expiry_steps=12)
+        ]
+        self.env.total_waste_value = 50.0
+        self.env.total_sold_cost_value = 150.0
+
+        self.env.total_net_profit = 10.0
+        low_profit_ratio = self.env._compute_waste_ratio()
+
+        self.env.total_net_profit = 1000.0
+        high_profit_ratio = self.env._compute_waste_ratio()
+
+        self.assertAlmostEqual(low_profit_ratio, 0.125)
+        self.assertAlmostEqual(high_profit_ratio, 0.125)
+
+    def test_manual_prices_are_capped_at_env_max_multiplier(self):
+        """
+        Raw ActionSpace inputs should respect the same top-end pricing cap that the RL
+        wrapper uses, so the score denominator and allowed actions stay aligned.
+        """
+        self.env.available_riders = 100
+        self.env.competitor_prices = {"milk": 6.0, "bread": 6.0}
+        self.env.demand_index = {"milk": 10.0, "bread": 10.0}
+
+        result = self.env.step(
+            ActionSpace(pricing={"milk": 10.0, "bread": 10.0}, sourcing={}, waste_management={}),
+            verbose=False,
+        )
+
+        self.assertAlmostEqual(self.env.total_net_profit, self.env.max_potential_profit)
+        self.assertAlmostEqual(result.score, 1.0)
 
 
 class TestGymWrapper(unittest.TestCase):

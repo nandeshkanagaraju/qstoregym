@@ -4,6 +4,10 @@ from models import ObservationSpace, ActionSpace, RewardState, StepResult, Inven
 from tasks import get_task_config
 
 # 1 step = 15 minutes of real store time.
+MIN_PRICE_MULTIPLIER = 0.5
+MAX_PRICE_MULTIPLIER = 3.0
+
+
 class QStoreEnv:
     def __init__(self):
         self.task_name = ""
@@ -23,9 +27,11 @@ class QStoreEnv:
         # Cumulative episode metrics for score calculation
         self.total_net_profit = 0.0
         self.total_waste_value = 0.0
+        self.total_sold_cost_value = 0.0
         # Fixed at reset — NOT inflated by sourcing orders.
-        # Represents the theoretical max revenue from initial inventory at 1.5x cost.
-        # The denominator stays stable so profit_ratio is meaningful throughout the episode.
+        # Represents the theoretical max NET profit from the initial inventory when sold
+        # at the environment's allowed max markup. Keeping this frozen prevents sourcing
+        # orders from diluting the score denominator mid-episode.
         self.max_potential_profit = 1.0
 
     def reset(self, task_name: str = "The Night Shift") -> ObservationSpace:
@@ -43,12 +49,17 @@ class QStoreEnv:
         self.pending_orders = []
         self.total_net_profit = 0.0
         self.total_waste_value = 0.0
+        self.total_sold_cost_value = 0.0
 
         # Lock max_potential_profit at reset — covers only initial inventory.
-        # Sourcing no longer inflates this denominator, removing the double-penalty bug.
+        # Use a true net-profit ceiling, not revenue, so a perfect score requires
+        # the agent to match the best allowed markup without waste.
         self.max_potential_profit = max(
             1.0,
-            sum(item.quantity * item.cost_price * 1.5 for item in self.inventory)
+            sum(
+                item.quantity * item.cost_price * (MAX_PRICE_MULTIPLIER - 1.0)
+                for item in self.inventory
+            )
         )
 
         # Single call to set weather/event and competitor prices.
@@ -72,6 +83,18 @@ class QStoreEnv:
             special_event_active=self.special_event_active,
             pending_orders=pending_summary,
         )
+
+    def _inventory_cost_basis(self) -> float:
+        return sum(item.quantity * item.cost_price for item in self.inventory)
+
+    def _compute_waste_ratio(self) -> float:
+        # Measure waste against inventory cost basis, not profit. This keeps the
+        # penalty stable even when the agent earns higher margins.
+        denominator = max(
+            1.0,
+            self.total_waste_value + self._inventory_cost_basis() + self.total_sold_cost_value,
+        )
+        return min(1.0, self.total_waste_value / denominator)
 
     def _update_environment_dynamics(self):
         self.current_weather = random.choices(self.weather_states, weights=self.weather_probs, k=1)[0]
@@ -154,7 +177,11 @@ class QStoreEnv:
             if cost is None:
                 continue
 
-            agent_price = cost * max(0.5, price_multiplier)  # floor at 50% of cost (deep fire sale)
+            applied_multiplier = min(
+                MAX_PRICE_MULTIPLIER,
+                max(MIN_PRICE_MULTIPLIER, float(price_multiplier)),
+            )
+            agent_price = cost * applied_multiplier
             comp_price = self.competitor_prices.get(p_id, agent_price * 1.5)
             demand = self.demand_index.get(p_id, 1.0)
 
@@ -172,7 +199,7 @@ class QStoreEnv:
             sales_achieved = self._sell_inventory(p_id, fulfillable_sales, agent_price, reward_state)
 
             if verbose:
-                print(f"    - {p_id}: Price=${agent_price:.2f} (Mult={price_multiplier:.2f}x, Comp=${comp_price:.2f}), Demand={demand:.2f}")
+                print(f"    - {p_id}: Price=${agent_price:.2f} (Mult={applied_multiplier:.2f}x, Comp=${comp_price:.2f}), Demand={demand:.2f}")
                 print(f"      -> Expected: {expected_sales}, Fulfilled: {sales_achieved}")
 
             stockout_misses = fulfillable_sales - sales_achieved
@@ -209,12 +236,11 @@ class QStoreEnv:
         if not done:
             self._update_environment_dynamics()
 
-        # Score: (net_profit / max_potential) - waste_ratio.
-        # max_potential is frozen at reset, so profit_ratio is a stable signal throughout.
-        # waste_ratio denominator includes waste_value to stay bounded in (0, 1).
-        waste_ratio = min(1.0, self.total_waste_value / max(1.0, self.total_waste_value + sum(
-            item.quantity * item.cost_price for item in self.inventory
-        ) + abs(self.total_net_profit)))
+        # Score: (net_profit / max_potential_profit) - waste_ratio.
+        # max_potential_profit is frozen at reset and represents a true net-profit
+        # ceiling on the initial inventory. waste_ratio uses inventory cost basis so
+        # high profit does not make waste "cheaper".
+        waste_ratio = self._compute_waste_ratio()
 
         raw_profit_ratio = max(0.0, self.total_net_profit / self.max_potential_profit)
         profit_ratio_clamped = min(1.0, raw_profit_ratio)
@@ -233,6 +259,8 @@ class QStoreEnv:
             info={
                 "net_profit": self.total_net_profit,
                 "waste_value": self.total_waste_value,
+                "waste_ratio": waste_ratio,
+                "inventory_cost_basis": self._inventory_cost_basis(),
                 "task": self.task_name,
             },
         )
@@ -261,6 +289,8 @@ class QStoreEnv:
             remaining_qty -= sell_qty
             sales_made += sell_qty
 
+            cost_basis = item.cost_price * sell_qty
+            self.total_sold_cost_value += cost_basis
             profit_margin = (price - item.cost_price) * sell_qty
             self.total_net_profit += profit_margin
 

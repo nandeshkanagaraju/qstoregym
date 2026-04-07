@@ -329,7 +329,7 @@ def step_env(
             step=state.step_count,
             reward=result.reward,
             score=result.score,
-            waste_ratio=result.info.get("waste_value", 0.0),
+            waste_ratio=result.info.get("waste_ratio", 0.0),
         ))
 
         sla_breaches = order_manager.mark_sla_breaches(state.step_count)
@@ -407,7 +407,7 @@ def rl_decide(
             step=state.step_count,
             reward=result.reward,
             score=result.score,
-            waste_ratio=result.info.get("waste_value", 0.0),
+            waste_ratio=result.info.get("waste_ratio", 0.0),
         ))
 
         if result.done:
