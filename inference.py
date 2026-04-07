@@ -18,6 +18,12 @@ from tasks import AVAILABLE_TASKS
 
 load_dotenv()
 
+API_BASE_URL = os.environ.get("API_BASE_URL", "https://api.openai.com/v1")
+MODEL_NAME = os.environ.get("MODEL_NAME", "gpt-4o")
+HF_TOKEN = os.environ.get("HF_TOKEN")
+# Optional - if you use from_docker_image():
+LOCAL_IMAGE_NAME = os.environ.get("LOCAL_IMAGE_NAME")
+
 
 def log_start(task: str, env: str, model: str) -> None:
     print(f"[START] task={task} env={env} model={model}", flush=True)
@@ -38,14 +44,13 @@ def clamp_score(score: float) -> float:
 
 
 def build_llm_client() -> OpenAI:
-    api_base_url = os.environ.get("API_BASE_URL", "https://api.openai.com/v1")
-    model_name = os.environ.get("MODEL_NAME", "gpt-4o")
-    hf_token = os.environ.get("HF_TOKEN") or os.environ.get("OPENAI_API_KEY")
+    # Use the global variables mandated by the OpenEnv checklist
+    hf_token_val = HF_TOKEN or os.environ.get("OPENAI_API_KEY")
 
-    if not hf_token:
-        raise RuntimeError("Missing required environment variables for LLM inference (HF_TOKEN or OPENAI_API_KEY).")
+    if not hf_token_val:
+        raise RuntimeError("Missing required environment variables for LLM inference (HF_TOKEN).")
 
-    return OpenAI(base_url=api_base_url, api_key=hf_token)
+    return OpenAI(base_url=API_BASE_URL, api_key=hf_token_val)
 
 
 def _load_ppo(task_name: str, curriculum: bool = False):
