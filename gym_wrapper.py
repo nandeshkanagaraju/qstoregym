@@ -63,9 +63,9 @@ class QStoreGymWrapper(gym.Env):
 
     metadata = {"render_modes": []}
 
-    def __init__(self, task_name: str = "The Night Shift"):
+    def __init__(self, task_name: str = "The Night Shift", seed: int | None = None):
         super().__init__()
-        self.env = QStoreEnv()
+        self.env = QStoreEnv(seed=seed)
         self.task_name = task_name
 
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(ACT_DIM,), dtype=np.float32)
@@ -77,7 +77,7 @@ class QStoreGymWrapper(gym.Env):
 
     def reset(self, seed=None, options=None):
         super().reset(seed=seed)
-        obs_pydantic = self.env.reset(self.task_name)
+        obs_pydantic = self.env.reset(self.task_name, seed=seed)
         return self._flatten_obs(obs_pydantic), {}
 
     def step(self, action: np.ndarray):

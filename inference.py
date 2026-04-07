@@ -1,295 +1,256 @@
-"""
-Inference runner for Q-Store Gym.
+from __future__ import annotations
 
-Supports three agent modes:
-  --use-ppo       : Load a trained PPO model (per-task or curriculum).
-  --use-gpt       : Use OpenAI GPT-4o as a zero-shot heuristic policy (requires OPENAI_API_KEY).
-  --benchmark     : Run all three modes on all tasks and print a comparison table.
-
-Default behavior: tries PPO → falls back to deterministic 1.3x baseline.
-
-Changes from original:
-- PPO inference now loads VecNormalize stats so inputs are correctly normalized.
-- Per-step breakdown is printed during PPO runs (same detail as non-PPO mode).
-- Benchmark mode compares deterministic / GPT / PPO side-by-side.
-- Curriculum model supported via --curriculum flag.
-"""
-import os
-import json
 import argparse
-import statistics
-from typing import Optional
+import json
+import os
+import uuid
+from collections import OrderedDict
+from typing import Dict, List, Optional, Tuple
 
 from dotenv import load_dotenv
-from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
+from openai import OpenAI
 
 from env import QStoreEnv
-from models import ActionSpace
-from tasks import AVAILABLE_TASKS
+from graders import DEFAULT_SEEDS, deterministic_baseline_policy, locate_saved_model
 from gym_wrapper import QStoreGymWrapper
+from models import ActionSpace, ObservationSpace
+from tasks import AVAILABLE_TASKS
 
 load_dotenv()
 
 
-# ------------------------------------------------------------------
-# PPO inference
-# ------------------------------------------------------------------
+def structured_log(tag: str, **fields) -> None:
+    ordered = OrderedDict(fields.items())
+    print(f"[{tag}] {json.dumps(ordered, separators=(',', ':'), ensure_ascii=True)}", flush=True)
 
-def _load_ppo(model_stem: str, task_name: str):
-    """Load PPO model and its VecNormalize stats. Returns (model, norm_env)."""
-    from stable_baselines3 import PPO
-    from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
-    from stable_baselines3.common.monitor import Monitor
 
-    if not os.path.exists(f"{model_stem}.zip"):
+def clamp_score(score: float) -> float:
+    return max(0.0, min(1.0, float(score)))
+
+
+def build_llm_client() -> OpenAI:
+    api_base_url = os.environ.get("API_BASE_URL")
+    model_name = os.environ.get("MODEL_NAME")
+    hf_token = os.environ.get("HF_TOKEN")
+
+    missing = [name for name, value in [("API_BASE_URL", api_base_url), ("MODEL_NAME", model_name), ("HF_TOKEN", hf_token)] if not value]
+    if missing:
+        raise RuntimeError(f"Missing required environment variables for LLM inference: {', '.join(missing)}")
+
+    return OpenAI(base_url=api_base_url, api_key=hf_token)
+
+
+def _load_ppo(task_name: str, curriculum: bool = False):
+    model_path = locate_saved_model(task_name, curriculum=curriculum)
+    if model_path is None:
         return None, None
 
+    from stable_baselines3 import PPO
+    from stable_baselines3.common.monitor import Monitor
+    from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
+
+    model_stem = "ppo_curriculum" if curriculum else f"ppo_{task_name.replace(' ', '_')}"
+    raw_env = DummyVecEnv([lambda: Monitor(QStoreGymWrapper(task_name=task_name))])
     vecnorm_path = f"{model_stem}_vecnorm.pkl"
 
-    raw_env  = DummyVecEnv([lambda: Monitor(QStoreGymWrapper(task_name=task_name))])
     if os.path.exists(vecnorm_path):
         norm_env = VecNormalize.load(vecnorm_path, raw_env)
-        norm_env.training  = False
+        norm_env.training = False
         norm_env.norm_reward = False
     else:
-        # No normalization stats — run without (will perform worse but won't crash)
         norm_env = raw_env
 
-    model = PPO.load(model_stem, env=norm_env)
+    model = PPO.load(model_path, env=norm_env)
     return model, norm_env
 
 
-def run_ppo(task_name: str, curriculum: bool = False, stochastic: bool = False) -> Optional[float]:
-    if curriculum:
-        model_stem = "ppo_curriculum"
-    else:
-        model_stem = f"ppo_{task_name.replace(' ', '_')}"
+def llm_policy(client: OpenAI, model_name: str, observation: ObservationSpace) -> ActionSpace:
+    prompt = (
+        "You control a dark-store RL environment. "
+        "Return JSON only with keys pricing, sourcing, waste_management.\n"
+        "pricing values are multipliers in [0.8, 3.0].\n"
+        "sourcing values are integers in [0, 20].\n"
+        "waste_management values are integers in [0, 10].\n"
+        "Optimize for final score in [0,1] by balancing profit, low waste, and rider capacity.\n"
+        f"Observation: {observation.model_dump_json()}"
+    )
+    response = client.chat.completions.create(
+        model=model_name,
+        messages=[
+            {"role": "system", "content": "You are a precise operations policy. Output valid JSON only."},
+            {"role": "user", "content": prompt},
+        ],
+        response_format={"type": "json_object"},
+        temperature=0.1,
+    )
+    payload = json.loads(response.choices[0].message.content)
+    return ActionSpace(**payload)
 
-    model, norm_env = _load_ppo(model_stem, task_name)
-    if model is None:
-        print(f"  [PPO] Model {model_stem}.zip not found. Run train.py first.")
-        return None
 
-    print(f"\n{'='*60}")
-    print(f"[PPO{' Curriculum' if curriculum else ''}] Task: {task_name}")
-    print(f"{'='*60}")
+def ppo_policy(model, wrapper: QStoreGymWrapper, norm_env, observation: ObservationSpace, deterministic: bool = True) -> ActionSpace:
+    import numpy as np
 
-    obs = norm_env.reset()
+    obs_arr = wrapper._flatten_obs(observation)
+    obs_vec = norm_env.normalize_obs(obs_arr[np.newaxis, :]) if hasattr(norm_env, "normalize_obs") else obs_arr[np.newaxis, :]
+    raw_action, _ = model.predict(obs_vec, deterministic=deterministic)
+    return wrapper._decode_action(raw_action[0])
+
+
+def summarize_action(action: ActionSpace) -> Dict[str, Dict[str, float]]:
+    return {
+        "pricing": {key: round(float(value), 4) for key, value in sorted(action.pricing.items())},
+        "sourcing": {key: int(value) for key, value in sorted(action.sourcing.items()) if int(value) > 0},
+        "waste_management": {key: int(value) for key, value in sorted(action.waste_management.items()) if int(value) > 0},
+    }
+
+
+def select_agent(requested_agent: str, task_name: str, curriculum: bool) -> Tuple[str, Optional[object], Optional[object], Optional[QStoreGymWrapper]]:
+    if requested_agent == "baseline":
+        return "baseline", None, None, None
+
+    if requested_agent == "ppo":
+        model, norm_env = _load_ppo(task_name, curriculum=curriculum)
+        if model is None:
+            raise RuntimeError(f"No PPO artifact available for task '{task_name}'.")
+        return "ppo", model, norm_env, QStoreGymWrapper(task_name=task_name)
+
+    if requested_agent == "llm":
+        return "llm", None, None, None
+
+    model, norm_env = _load_ppo(task_name, curriculum=curriculum)
+    if model is not None:
+        return "ppo", model, norm_env, QStoreGymWrapper(task_name=task_name)
+    return "baseline", None, None, None
+
+
+def run_episode(
+    task_name: str,
+    agent: str,
+    seed: int,
+    episode_index: int,
+    curriculum: bool = False,
+    client: Optional[OpenAI] = None,
+    model_name: Optional[str] = None,
+) -> Dict[str, object]:
+    run_id = str(uuid.uuid4())
+    env = QStoreEnv(seed=seed)
+    observation = env.reset(task_name, seed=seed)
+    actual_agent, model, norm_env, wrapper = select_agent(agent, task_name, curriculum=curriculum)
+
+    structured_log(
+        "START",
+        run_id=run_id,
+        episode_index=episode_index,
+        task=task_name,
+        agent=actual_agent,
+        seed=seed,
+    )
+
+    total_reward = 0.0
+    step_index = 0
     done = False
     final_score = 0.0
 
-    # Run with the underlying QStoreEnv verbose=True output by using a parallel raw env
-    raw_env = QStoreEnv()
-    raw_obs = raw_env.reset(task_name)
-
     while not done:
-        action, _ = model.predict(obs, deterministic=not stochastic)
-        obs, _, terminated, infos = norm_env.step(action)
-        done = bool(terminated[0])
+        if actual_agent == "baseline":
+            action = deterministic_baseline_policy(observation)
+        elif actual_agent == "ppo":
+            action = ppo_policy(model=model, wrapper=wrapper, norm_env=norm_env, observation=observation)
+        else:
+            if client is None or model_name is None:
+                raise RuntimeError("LLM client is not configured.")
+            action = llm_policy(client=client, model_name=model_name, observation=observation)
 
-        # Replay same action on raw env for verbose output
-        from gym_wrapper import QStoreGymWrapper, PRODUCTS, PRICE_MULT_MIN, PRICE_MULT_MAX, MAX_SOURCE_UNITS, MAX_WASTE_UNITS
-        act_arr = action[0]
-        pricing, sourcing, waste = {}, {}, {}
-        for i, p_id in enumerate(PRODUCTS):
-            p_val = float(act_arr[i * 3])
-            s_val = float(act_arr[i * 3 + 1])
-            w_val = float(act_arr[i * 3 + 2])
-            mult = PRICE_MULT_MIN + (p_val + 1.0) / 2.0 * (PRICE_MULT_MAX - PRICE_MULT_MIN)
-            pricing[p_id]  = float(max(PRICE_MULT_MIN, min(PRICE_MULT_MAX, mult)))
-            sourcing[p_id] = int(max(0.0, s_val) * MAX_SOURCE_UNITS)
-            waste[p_id]    = int(max(0.0, w_val) * MAX_WASTE_UNITS)
+        result = env.step(action, verbose=False)
+        step_index += 1
+        total_reward += float(result.reward)
+        final_score = clamp_score(result.score)
+        observation = result.observation
+        done = result.done
 
-        raw_result = raw_env.step(ActionSpace(pricing=pricing, sourcing=sourcing, waste_management=waste), verbose=True)
-        final_score = float(infos[0].get("score", raw_result.score))
-        raw_obs = raw_result.observation
+        structured_log(
+            "STEP",
+            run_id=run_id,
+            episode_index=episode_index,
+            task=task_name,
+            agent=actual_agent,
+            seed=seed,
+            step=step_index,
+            reward=round(float(result.reward), 6),
+            cumulative_reward=round(total_reward, 6),
+            score=round(final_score, 6),
+            done=done,
+            action=summarize_action(action),
+        )
 
-    print(f"\n[Result] Task '{task_name}' final score: {final_score:.4f}")
-    norm_env.close()
-    return final_score
+    if norm_env is not None:
+        norm_env.close()
 
-
-# ------------------------------------------------------------------
-# GPT-4o inference
-# ------------------------------------------------------------------
-
-def run_gpt(task_name: str) -> Optional[float]:
-    api_key = os.environ.get("OPENAI_API_KEY")
-    if not api_key:
-        print(f"  [GPT] OPENAI_API_KEY not set — skipping task '{task_name}'.")
-        return None
-
-    from openai import OpenAI
-    client = OpenAI(api_key=api_key)
-
-    print(f"\n{'='*60}")
-    print(f"[GPT-4o] Task: {task_name}")
-    print(f"{'='*60}")
-
-    env = QStoreEnv()
-    obs = env.reset(task_name)
-    done = False
-    result = None
-
-    @retry(
-        retry=retry_if_exception_type(Exception),
-        stop=stop_after_attempt(3),
-        wait=wait_exponential(multiplier=1, min=2, max=10),
-        reraise=False,
+    summary = {
+        "run_id": run_id,
+        "episode_index": episode_index,
+        "task": task_name,
+        "agent": actual_agent,
+        "seed": seed,
+        "steps": step_index,
+        "total_reward": total_reward,
+        "score": final_score,
+        "net_profit": float(env.total_net_profit),
+        "waste_value": float(env.total_waste_value),
+    }
+    structured_log(
+        "END",
+        run_id=run_id,
+        episode_index=episode_index,
+        task=task_name,
+        agent=actual_agent,
+        seed=seed,
+        steps=step_index,
+        total_reward=round(total_reward, 6),
+        score=round(final_score, 6),
+        net_profit=round(float(env.total_net_profit), 6),
+        waste_value=round(float(env.total_waste_value), 6),
     )
-    def _call_gpt(current_obs):
-        prompt = (
-            f"You are managing a dark store (Q-Commerce warehouse). "
-            f"Current state: {current_obs.model_dump_json()}.\n\n"
-            f"Output a JSON object with 3 keys:\n"
-            f"  'pricing': dict of product_id -> price multiplier over cost_price "
-            f"(e.g. 1.5 means price at 150%% of cost, range 0.8 to 3.0)\n"
-            f"  'sourcing': dict of product_id -> integer units to order (0 to 20)\n"
-            f"  'waste_management': dict of product_id -> integer units to discard (0 to 10)\n\n"
-            f"Optimise for maximum net profit while minimising waste."
-        )
-        response = client.chat.completions.create(
-            model="gpt-4o",
-            messages=[
-                {"role": "system", "content": "You are a store operations optimizer. Output valid JSON only."},
-                {"role": "user", "content": prompt},
-            ],
-            response_format={"type": "json_object"},
-            timeout=15,  # hard timeout per request — never block indefinitely
-        )
-        return json.loads(response.choices[0].message.content)
-
-    while not done:
-        try:
-            # Retries up to 3 times with exponential backoff before giving up
-            action_data = _call_gpt(obs)
-            action = ActionSpace(**action_data)
-        except Exception as e:
-            print(f"  [GPT] API failed after retries: {e}. Using deterministic fallback for this step.")
-            pricing = {item.product_id: 1.5 for item in obs.inventory}
-            action = ActionSpace(pricing=pricing, sourcing={}, waste_management={})
-
-        result = env.step(action, verbose=True)
-        obs = result.observation
-        done = result.done
-
-    score = result.score if result else 0.0
-    print(f"\n[Result] Task '{task_name}' final score: {score:.4f}")
-    return score
+    return summary
 
 
-# ------------------------------------------------------------------
-# Deterministic baseline
-# ------------------------------------------------------------------
-
-def run_deterministic(task_name: str) -> float:
-    """Fixed 1.3x markup, no sourcing, no discarding. Useful as a lower-bound benchmark."""
-    print(f"\n{'='*60}")
-    print(f"[Deterministic Baseline] Task: {task_name}")
-    print(f"{'='*60}")
-
-    env = QStoreEnv()
-    obs = env.reset(task_name)
-    done = False
-    result = None
-
-    while not done:
-        # 1.3x markup as a multiplier (ActionSpace.pricing is now a multiplier)
-        pricing = {item.product_id: 1.3 for item in obs.inventory}
-        action = ActionSpace(pricing=pricing, sourcing={}, waste_management={})
-        result = env.step(action, verbose=True)
-        obs = result.observation
-        done = result.done
-
-    score = result.score if result else 0.0
-    print(f"\n[Result] Task '{task_name}' final score: {score:.4f}")
-    return score
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description="Structured inference runner for Q-Store Gym")
+    parser.add_argument("--agent", choices=["auto", "baseline", "ppo", "llm"], default="auto")
+    parser.add_argument("--task", choices=AVAILABLE_TASKS, default=None)
+    parser.add_argument("--episodes", type=int, default=1)
+    parser.add_argument("--curriculum", action="store_true")
+    parser.add_argument("--seed", type=int, default=DEFAULT_SEEDS[0])
+    return parser.parse_args()
 
 
-# ------------------------------------------------------------------
-# Benchmark suite
-# ------------------------------------------------------------------
+def main() -> int:
+    args = parse_args()
+    tasks = [args.task] if args.task else AVAILABLE_TASKS
+    seeds: List[int] = [args.seed + offset for offset in range(args.episodes)]
 
-def run_benchmark(n_episodes: int = 5, curriculum: bool = False):
-    """
-    Run deterministic / GPT / PPO on all tasks, n_episodes each.
-    Prints a comparison table with mean ± std scores.
-    """
-    print(f"\n{'='*60}")
-    print(f"BENCHMARK: {n_episodes} episodes per task per agent")
-    print(f"{'='*60}")
+    client = None
+    model_name = os.environ.get("MODEL_NAME")
+    if args.agent == "llm":
+        client = build_llm_client()
 
-    results = {}
-    for task_name in AVAILABLE_TASKS:
-        results[task_name] = {"deterministic": [], "ppo": []}
+    results = []
+    for task_name in tasks:
+        for episode_index, seed in enumerate(seeds, start=1):
+            results.append(
+                run_episode(
+                    task_name=task_name,
+                    agent=args.agent,
+                    seed=seed,
+                    episode_index=episode_index,
+                    curriculum=args.curriculum,
+                    client=client,
+                    model_name=model_name,
+                )
+            )
 
-        for _ in range(n_episodes):
-            results[task_name]["deterministic"].append(run_deterministic(task_name))
+    return 0 if results else 1
 
-        for _ in range(n_episodes):
-            score = run_ppo(task_name, curriculum=curriculum, stochastic=False)
-            if score is not None:
-                results[task_name]["ppo"].append(score)
-
-        if os.environ.get("OPENAI_API_KEY"):
-            results[task_name]["gpt"] = []
-            for _ in range(n_episodes):
-                score = run_gpt(task_name)
-                if score is not None:
-                    results[task_name]["gpt"].append(score)
-
-    print(f"\n{'='*60}")
-    print(f"{'Task':<28} {'Agent':<16} {'Mean Score':>10} {'Std':>8}")
-    print(f"{'-'*62}")
-    for task_name, agents in results.items():
-        for agent_label, scores in agents.items():
-            if scores:
-                mean = statistics.mean(scores)
-                std  = statistics.stdev(scores) if len(scores) > 1 else 0.0
-                print(f"  {task_name:<26} {agent_label:<16} {mean:>10.4f} {std:>8.4f}")
-    print(f"{'='*60}\n")
-
-
-# ------------------------------------------------------------------
-# Entry point
-# ------------------------------------------------------------------
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Q-Store Gym Inference")
-    parser.add_argument("--use-gpt",      action="store_true", help="Use GPT-4o for inference")
-    parser.add_argument("--use-ppo",      action="store_true", help="Use trained PPO model")
-    parser.add_argument("--curriculum",   action="store_true", help="Use curriculum PPO model")
-    parser.add_argument("--stochastic",   action="store_true", help="Stochastic (non-deterministic) PPO actions")
-    parser.add_argument("--benchmark",    action="store_true", help="Run full benchmark comparison")
-    parser.add_argument("--n-episodes",   type=int, default=3, help="Episodes per task in benchmark mode")
-    parser.add_argument("--task",         type=str, default=None, help="Run a specific task only")
-    args = parser.parse_args()
-
-    if not os.environ.get("OPENAI_API_KEY") and args.use_gpt:
-        print("WARNING: OPENAI_API_KEY not set. Cannot use GPT mode.")
-        args.use_gpt = False
-
-    tasks = [args.task] if args.task and args.task in AVAILABLE_TASKS else AVAILABLE_TASKS
-
-    if args.benchmark:
-        run_benchmark(n_episodes=args.n_episodes, curriculum=args.curriculum)
-    elif args.use_gpt:
-        for t in tasks:
-            run_gpt(t)
-    elif args.use_ppo or args.curriculum:
-        for t in tasks:
-            run_ppo(t, curriculum=args.curriculum, stochastic=args.stochastic)
-    else:
-        # Auto-detect: use PPO if model exists, otherwise deterministic baseline
-        has_ppo = any(
-            os.path.exists(f"ppo_{t.replace(' ', '_')}.zip") for t in tasks
-        ) or os.path.exists("ppo_curriculum.zip")
-
-        if has_ppo:
-            print("Found trained models. Running PPO inference.")
-            for t in tasks:
-                run_ppo(t, curriculum=os.path.exists("ppo_curriculum.zip"))
-        else:
-            print("No trained models found. Running deterministic baseline.")
-            for t in tasks:
-                run_deterministic(t)
+    raise SystemExit(main())

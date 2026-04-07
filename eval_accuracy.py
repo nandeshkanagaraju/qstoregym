@@ -1,14 +1,13 @@
+import statistics
 import argparse
 import os
-import statistics
 from typing import List, Optional, Tuple
 
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 from stable_baselines3.common.monitor import Monitor
+from stable_baselines3.common.vec_env import DummyVecEnv, VecNormalize
 
-from env import QStoreEnv
-from models import ActionSpace
+from graders import DEFAULT_SEEDS, deterministic_baseline_policy, locate_saved_model, run_episode
 from tasks import AVAILABLE_TASKS
 from gym_wrapper import QStoreGymWrapper
 
@@ -23,25 +22,13 @@ def _summarize(scores: List[float]) -> Tuple[float, float]:
 
 
 def run_baseline(task_name: str, n_episodes: int = DEFAULT_EVAL_EPISODES) -> List[float]:
-    scores = []
-    for _ in range(n_episodes):
-        env = QStoreEnv()
-        obs = env.reset(task_name)
-        done = False
-        result = None
-        while not done:
-            pricing = {item.product_id: 1.3 for item in obs.inventory}
-            action = ActionSpace(pricing=pricing, sourcing={}, waste_management={})
-            result = env.step(action, verbose=False)
-            obs = result.observation
-            done = result.done
-        scores.append(float(result.score))
-    return scores
+    seeds = [DEFAULT_SEEDS[0] + idx for idx in range(n_episodes)]
+    return [float(run_episode(task_name, policy=deterministic_baseline_policy, seed=seed)["score"]) for seed in seeds]
 
 
 def run_trained_ppo(task_name: str, n_episodes: int = DEFAULT_EVAL_EPISODES) -> Optional[List[float]]:
-    model_path = f"ppo_{task_name.replace(' ', '_')}.zip"
-    if not os.path.exists(model_path):
+    model_path = locate_saved_model(task_name)
+    if model_path is None or not os.path.exists(model_path):
         return None
 
     raw_env_func = lambda: Monitor(QStoreGymWrapper(task_name=task_name))

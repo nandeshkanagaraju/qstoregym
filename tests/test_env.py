@@ -1,6 +1,7 @@
 import unittest
 import numpy as np
 from env import MAX_PRICE_MULTIPLIER, QStoreEnv
+from graders import validate_baseline_reproducibility, validate_task_graders
 from models import ActionSpace, InventoryItem
 from gym_wrapper import QStoreGymWrapper, OBS_DIM, ACT_DIM, PRODUCTS
 
@@ -182,6 +183,15 @@ class TestQStoreEnv(unittest.TestCase):
         self.assertAlmostEqual(self.env.total_net_profit, self.env.max_potential_profit)
         self.assertAlmostEqual(result.score, 1.0)
 
+    def test_reset_with_same_seed_is_reproducible(self):
+        env_a = QStoreEnv(seed=123)
+        env_b = QStoreEnv(seed=123)
+
+        obs_a = env_a.reset("The Lunch Rush", seed=123)
+        obs_b = env_b.reset("The Lunch Rush", seed=123)
+
+        self.assertEqual(obs_a.model_dump(), obs_b.model_dump())
+
 
 class TestGymWrapper(unittest.TestCase):
 
@@ -259,6 +269,20 @@ class TestGymWrapper(unittest.TestCase):
         # globals: 0-6 (7 dims), milk starts at 7: qty, cost, exp, comp, demand, pending
         milk_pending_idx = 7 + 0 * 6 + 5  # = 12
         self.assertGreaterEqual(obs[milk_pending_idx], 0)
+
+
+class TestValidationUtilities(unittest.TestCase):
+
+    def test_task_graders_cover_minimum_tasks_and_score_range(self):
+        report = validate_task_graders()
+        self.assertTrue(report["minimum_tasks_met"])
+        self.assertTrue(report["all_scores_in_range"])
+        self.assertGreaterEqual(report["task_count"], 3)
+
+    def test_baseline_reproducibility_report_is_deterministic(self):
+        report = validate_baseline_reproducibility(seeds=[5, 7])
+        self.assertTrue(report["reproducible"])
+        self.assertTrue(all(item["match"] for item in report["comparisons"]))
 
 
 if __name__ == '__main__':

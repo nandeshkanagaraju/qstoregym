@@ -1,5 +1,5 @@
 import random
-from typing import Dict, List, Literal, Tuple
+from typing import Dict, List, Literal, Optional, Tuple
 from models import ObservationSpace, ActionSpace, RewardState, StepResult, InventoryItem
 from tasks import get_task_config
 
@@ -9,7 +9,7 @@ MAX_PRICE_MULTIPLIER = 3.0
 
 
 class QStoreEnv:
-    def __init__(self):
+    def __init__(self, seed: Optional[int] = None):
         self.task_name = ""
         self.current_step = 0
         self.max_steps = 0
@@ -33,8 +33,29 @@ class QStoreEnv:
         # at the environment's allowed max markup. Keeping this frozen prevents sourcing
         # orders from diluting the score denominator mid-episode.
         self.max_potential_profit = 1.0
+        self.base_seed: Optional[int] = seed
+        self.reset_count = 0
+        self._last_seed: Optional[int] = None
+        self.rng = random.Random()
+        if seed is not None:
+            self.rng.seed(seed)
 
-    def reset(self, task_name: str = "The Night Shift") -> ObservationSpace:
+    def reset(self, task_name: str = "The Night Shift", seed: Optional[int] = None) -> ObservationSpace:
+        episode_seed: Optional[int]
+        if seed is not None:
+            self.base_seed = seed
+            self.reset_count = 0
+            episode_seed = seed
+        elif self.base_seed is not None:
+            episode_seed = self.base_seed + self.reset_count
+        else:
+            episode_seed = None
+
+        if episode_seed is not None:
+            self.rng.seed(episode_seed)
+        self._last_seed = episode_seed
+        self.reset_count += 1
+
         self.task_name = task_name
         self.config = get_task_config(task_name)
 
@@ -97,23 +118,23 @@ class QStoreEnv:
         return min(1.0, self.total_waste_value / denominator)
 
     def _update_environment_dynamics(self):
-        self.current_weather = random.choices(self.weather_states, weights=self.weather_probs, k=1)[0]
-        self.special_event_active = random.random() < self.config["special_event_prob"]
+        self.current_weather = self.rng.choices(self.weather_states, weights=self.weather_probs, k=1)[0]
+        self.special_event_active = self.rng.random() < self.config["special_event_prob"]
 
         products = set(item.product_id for item in self.inventory)
         for p in products:
             cost = next((item.cost_price for item in self.inventory if item.product_id == p), 1.0)
-            self.competitor_prices[p] = round(cost * random.uniform(1.2, 1.8), 2)
+            self.competitor_prices[p] = round(cost * self.rng.uniform(1.2, 1.8), 2)
 
             weather_mult = 1.5 if self.current_weather in ['rainy', 'stormy'] else 1.0
             event_mult = 2.0 if self.special_event_active else 1.0
-            self.demand_index[p] = self.config["base_demand"] * weather_mult * event_mult * random.uniform(0.8, 1.2)
+            self.demand_index[p] = self.config["base_demand"] * weather_mult * event_mult * self.rng.uniform(0.8, 1.2)
 
         # Rider fluctuations
         if self.current_weather == 'stormy':
-            self.available_riders = max(1, self.available_riders - random.randint(1, 3))
-        elif random.random() < 0.2:
-            self.available_riders += random.choice([-1, 1])
+            self.available_riders = max(1, self.available_riders - self.rng.randint(1, 3))
+        elif self.rng.random() < 0.2:
+            self.available_riders += self.rng.choice([-1, 1])
             self.available_riders = max(1, self.available_riders)
 
     def step(self, action: ActionSpace, verbose: bool = True) -> StepResult:
@@ -262,6 +283,7 @@ class QStoreEnv:
                 "waste_ratio": waste_ratio,
                 "inventory_cost_basis": self._inventory_cost_basis(),
                 "task": self.task_name,
+                "seed": self._last_seed,
             },
         )
 

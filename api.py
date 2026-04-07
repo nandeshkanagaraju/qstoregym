@@ -238,8 +238,16 @@ async def track_request_metrics(request: Request, call_next):
 class NewSessionRequest(BaseModel):
     task_name: str = "The Night Shift"
 
+class ResetRequest(BaseModel):
+    task_name: str = "The Night Shift"
+    session_id: Optional[str] = None
+
 class StepRequest(BaseModel):
     """The agent action to execute. pricing is a cost-multiplier dict."""
+    action: ActionSpace
+
+class OpenEnvStepRequest(BaseModel):
+    session_id: str
     action: ActionSpace
 
 class RLDecideRequest(BaseModel):
@@ -295,12 +303,42 @@ def new_session(
     }
 
 
+@app.post("/reset", tags=["RL Environment"])
+def openenv_reset(body: ResetRequest):
+    """
+    OpenEnv compatibility endpoint.
+    Creates a new session when session_id is omitted, otherwise resets the existing session.
+    """
+    if body.task_name not in AVAILABLE_TASKS:
+        raise HTTPException(400, f"Unknown task. Available: {AVAILABLE_TASKS}")
+
+    session_id = body.session_id or str(uuid.uuid4())
+    state = SessionState(body.task_name)
+    with _sessions_lock:
+        _sessions[session_id] = state
+
+    return {
+        "session_id": session_id,
+        "task_name": body.task_name,
+        "observation": state.obs.model_dump(),
+    }
+
+
 @app.get("/session/{session_id}/state", tags=["RL Environment"])
 def get_state(
     session_id: str,
     _: str = Depends(require_client_key),
 ):
     """Return the current observation for an existing session."""
+    state = _get_session(session_id)
+    with state.lock:
+        obs = state.obs.model_dump()
+    return {"session_id": session_id, "observation": obs}
+
+
+@app.get("/state", tags=["RL Environment"])
+def openenv_state(session_id: str):
+    """OpenEnv compatibility endpoint for reading the current observation."""
     state = _get_session(session_id)
     with state.lock:
         obs = state.obs.model_dump()
@@ -354,6 +392,27 @@ def step_env(
         "done":             result.done,
         "score":            result.score,
         "info":             result.info,
+    }
+
+
+@app.post("/step", tags=["RL Environment"])
+def openenv_step(body: OpenEnvStepRequest):
+    """OpenEnv compatibility endpoint for applying one action to an existing session."""
+    state = _get_session(body.session_id)
+
+    with state.lock:
+        result = state.env.step(body.action, verbose=False)
+        state.obs = result.observation
+        state.step_count += 1
+
+    return {
+        "session_id": body.session_id,
+        "observation": result.observation.model_dump(),
+        "reward": result.reward,
+        "reward_breakdown": result.reward_breakdown.model_dump(),
+        "done": result.done,
+        "score": result.score,
+        "info": result.info,
     }
 
 
