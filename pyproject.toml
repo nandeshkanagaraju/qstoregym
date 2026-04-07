@@ -25,5 +25,9 @@ dependencies = [
     "openai",
     "python-dotenv",
     "gymnasium",
-    "numpy"
+    "numpy",
+    "openenv-core>=0.2.0"
 ]
+
+[project.scripts]
+server = "server.app:main"
