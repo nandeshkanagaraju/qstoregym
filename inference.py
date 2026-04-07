@@ -38,13 +38,12 @@ def clamp_score(score: float) -> float:
 
 
 def build_llm_client() -> OpenAI:
-    api_base_url = os.environ.get("API_BASE_URL")
-    model_name = os.environ.get("MODEL_NAME")
-    hf_token = os.environ.get("HF_TOKEN")
+    api_base_url = os.environ.get("API_BASE_URL", "https://api.openai.com/v1")
+    model_name = os.environ.get("MODEL_NAME", "gpt-4o")
+    hf_token = os.environ.get("HF_TOKEN") or os.environ.get("OPENAI_API_KEY")
 
-    missing = [name for name, value in [("API_BASE_URL", api_base_url), ("MODEL_NAME", model_name), ("HF_TOKEN", hf_token)] if not value]
-    if missing:
-        raise RuntimeError(f"Missing required environment variables for LLM inference: {', '.join(missing)}")
+    if not hf_token:
+        raise RuntimeError("Missing required environment variables for LLM inference (HF_TOKEN or OPENAI_API_KEY).")
 
     return OpenAI(base_url=api_base_url, api_key=hf_token)
 
