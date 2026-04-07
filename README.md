@@ -1,56 +1,56 @@
 ---
 title: Q-Store Gym
-emoji: 🛒
+emoji: 🏢
 colorFrom: blue
 colorTo: green
 sdk: docker
 tags:
   - openenv
 ---
-# Q-Store Gym 🛒
+# Q-Store Gym
 
-**Q-Store Gym** is an autonomous dark store operations simulator built for Reinforcement Learning (RL) agents. Developed for the OpenEnv Hackathon, this environment serves as a "Digital Twin" of a Q-Commerce warehouse where goods must be delivered in under 10 minutes.
+**Q-Store Gym** is an autonomous dark store operations simulator developed for Reinforcement Learning (RL) agents. Designed specifically for the OpenEnv Hackathon, this environment serves as a rigorous "Digital Twin" of a modern Q-Commerce (Quick Commerce) fulfillment center where optimal performance requires processing and delivering perishable goods in restricted time limits.
 
-## 🚀 Features
-- **Dynamic Demand & Weather Events**: Real-time elements like storms or special events drastically change buyer urgency and rider availability.
-- **Continuous Action Space**: Agents use dynamic pricing, inventory sourcing, and manual waste management.
-- **Delayed Consequences**: A sophisticated Feedback Loop ensures the agent faces huge Waste Penalties if it over-stocks perishable goods.
-- **Automated Curriculum Learning**: Progressive difficulty scaling.
-- **OpenEnv Compliant**: Standard API structure (`step`, `reset`, `state`), standard config `openenv.yaml`, and full `pydantic` typing.
+## Core Features
+- **Dynamic Demand & Stochastic Weather Modeling**: Incorporates real-time external conditions (e.g., severe weather systems, local public events) that organically perturb buyer urgency and delivery fleet availability.
+- **Continuous Operations Action Space**: Agents exercise multifaceted control over operations, utilizing continuous dynamic pricing, inventory sourcing projections, and manual waste management logistics.
+- **Delayed Consequence Architecture**: Employs a sophisticated feedback loop that significantly penalizes agents for poor long-term planning, specifically via extreme Waste Penalties resulting from over-indexing perishable stock.
+- **Automated Curriculum Learning**: Features scalable difficulty progression to transition baseline models toward operational fluency.
+- **OpenEnv Specification Compliance**: Built on a highly standardized API structure (`step`, `reset`, `state`), bundled with standard `openenv.yaml` configurations, and secured via comprehensive `pydantic` strict typing.
 
-## ✨ Core API Definition
+## API Specification
 
 ### ObservationSpace
-The agent visually perceives the complete state of the dark store.
-- **Inventory Health**: Stock levels, expiry timers, and cost basis.
-- **Market Pulse**: Dynamic competitor pricing and a calculated `demand_index` per product.
-- **Logistics**: The count of `available_riders`.
-- **Environment**: Real-world noise `current_weather` & `special_event_active` flags.
+The agent receives a heavily typed, complete multidimensional state matrix of the dark store:
+- **Inventory Health**: Real-time stock volume computations, multi-step expiry degradation timers, and static cost basis points.
+- **Market Pulse**: Real-time measurement of competitor pricing elasticity and an aggregated `demand_index` calculated per product constraint.
+- **Logistics Capacity**: Live tally of `available_riders` within the active turn.
+- **Environmental State**: Exposes variables including `current_weather` anomalies and `special_event_active` binary flags.
 
 ### ActionSpace
-- `pricing` (Dict[str, float]): A continuous map to control frontend retail prices.
-- `sourcing` (Dict[str, int]): Volumes to order from suppliers (4-step lead time!).
-- `waste_management` (Dict[str, int]): Map of quantities to discard manually to limit rot penalties.
+- `pricing` (Dict[str, float]): A continuous map setting the frontend retail markup multipliers to control demand.
+- `sourcing` (Dict[str, int]): Volume purchase orders submitted to suppliers, requiring agents to account for multi-step fulfillment lead times.
+- `waste_management` (Dict[str, int]): Volumes marked for manual write-off to aggressively mitigate compounded rot penalties on perishable inventory.
 
-### Rewards
-The score algorithm returns `(Actual Net Profit / Max Potential Profit) - (Waste Ratio)`, where `Max Potential Profit` is the initial-inventory net-profit ceiling at the environment's max allowed markup and `Waste Ratio` is measured against inventory cost basis rather than profit. A `1.0` score means the agent matched that ceiling with zero waste.
+### Reward Function
+The dense reward architecture returns `(Actual Net Profit / Max Potential Profit) - (Waste Ratio)`. `Max Potential Profit` represents the initial-inventory net-profit ceiling calculated at the environment's maximum allowed markup, while `Waste Ratio` penalizes agents based on initial component cost basis. A score of `1.0` signifies that the agent fulfilled peak potential revenue generation while effectively yielding zero physical waste.
 
-## 🎯 Tasks & Expected Difficulty
+## Evaluative Tasks & Difficulty
 
-Each task defines a concrete scenario that tests different aspects of operations management.
+Each task defines an isolated, deterministic operational scenario that benchmarks specific dimensions of the agent's operations management capabilities:
 
 1. **The Night Shift** *(Difficulty: Easy)*
-   A standard scenario with predictable customer volume and standard weather. Designed as a warmup task where baseline deterministic pricing easily hits positive margins.
+   A baseline evaluation encompassing highly predictable customer volume and standard environmental states. Designed to establish fundamental markup execution margins.
 2. **The Supplier Strike** *(Difficulty: Easy)*
-   Sourcing capabilities are restricted, but demand remains steady. Agents must rely primarily on dynamic pricing.
+   Severely restricts sourcing capabilities while maintaining steady demand. Forces agents to maximize margins entirely via algorithmic dynamic pricing.
 3. **The Lunch Rush** *(Difficulty: Medium)*
-   High peak concurrency for 2 hours surrounded by low-demand lulls. Requires aggressive inventory ramping and preemptive markdowns of perishable goods.
+   Simulates extreme peak transaction concurrency over fixed intervals followed by operational lulls. Demands highly preemptive inventory ramping and aggressive markdown liquidation strategies.
 4. **The Weekend Blackout** *(Difficulty: Hard)*
-   A severe storm limits rider availability to near 0, causing order backlogs, massive profit drops, and massive spoilage of short-expiry food items like Milk.
+   A severe environmental storm limits routing fleet availability strictly toward zero, resulting in cascading order backlogs, massive margin compression, and extensive spoilage of short-expiry food items.
 5. **The Strawberry Crisis** *(Difficulty: Hard)*
-   The entire store is artificially flooded with highly perishable strawberries exactly 2 steps before rot. Requires flawless waste-management manual actions and fire-sale pricing.
+   The dark store is artificially injected with surplus, highly perishable inventory precisely before rot decay boundaries. Agents must exhibit flawless manual waste management triage alongside fire-sale liquidation pricing models.
 
-## 📊 Baseline Scores
+## Baseline Metrics
 
 Our deterministic fallback baseline policy achieves the following exact reproducible `score` out of `1.0` (averaged over 3 environment seeds):
 
@@ -60,33 +60,33 @@ Our deterministic fallback baseline policy achieves the following exact reproduc
 - **The Weekend Blackout**: `0.008`
 - **The Strawberry Crisis**: `0.000`
 
-## 🏃 Setup & Quickstart
+## Implementation & Quickstart
 
-### Local Setup
-Ensure you have Python 3.10+ installed.
+### Environment Initialization
+Ensure a Python 3.10+ execution environment is present.
 ```bash
 pip install -r requirements.txt
 ```
 
-### PPO Training
+### PPO Agent Training Procedures
 ```bash
 python train.py --device auto
 ```
 
-To force GPU training when CUDA is available:
+To enforce GPU utilization when CUDA is available:
 ```bash
 python train.py --device cuda
 ```
 
-For AMD Radeon on Windows, install the DirectML backend first:
+For systems operating AMD Radeon hardware on Windows, install the DirectML backend initially:
 ```bash
 pip install torch-directml
 python train.py --device dml
 ```
-If you use `--device auto`, the script will try CUDA first, then DirectML, then CPU.
+*Note: Utilizing `--device auto` establishes precedence for CUDA, failing over to DirectML, and finally utilizing CPU execution.*
 
 ### Baseline Agent Inference (OpenAI `gpt-4o`)
-Before execution, define the following variables as mandated by the spec:
+Prior to script execution, specify the following variables as explicitly mandated by the OpenEnv compliance spec:
 ```bash
 export API_BASE_URL="https://api.openai.com/v1"
 export MODEL_NAME="gpt-4o"
@@ -94,7 +94,7 @@ export HF_TOKEN="sk-proj-YOUR-KEY"
 python inference.py
 ```
 
-### Docker Usage
+### Containerized Execution (Docker)
 ```bash
 docker build -t q-store-gym .
 docker run q-store-gym
