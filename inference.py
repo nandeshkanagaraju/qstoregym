@@ -90,17 +90,21 @@ def llm_policy(client: OpenAI, model_name: str, observation: ObservationSpace) -
         "Optimize for final score in [0,1] by balancing profit, low waste, and rider capacity.\n"
         f"Observation: {observation.model_dump_json()}"
     )
-    response = client.chat.completions.create(
-        model=model_name,
-        messages=[
-            {"role": "system", "content": "You are a precise operations policy. Output valid JSON only."},
-            {"role": "user", "content": prompt},
-        ],
-        response_format={"type": "json_object"},
-        temperature=0.1,
-    )
-    payload = json.loads(response.choices[0].message.content)
-    return ActionSpace(**payload)
+    try:
+        response = client.chat.completions.create(
+            model=model_name,
+            messages=[
+                {"role": "system", "content": "You are a precise operations policy. Output valid JSON only."},
+                {"role": "user", "content": prompt},
+            ],
+            response_format={"type": "json_object"},
+            temperature=0.1,
+        )
+        payload = json.loads(response.choices[0].message.content)
+        return ActionSpace(**payload)
+    except Exception as e:
+        print(f"[DEBUG] LLM proxy network/parsing failure: {e}. Executing emergency baseline fallback.", flush=True)
+        return deterministic_baseline_policy(observation)
 
 
 def ppo_policy(model, wrapper: QStoreGymWrapper, norm_env, observation: ObservationSpace, deterministic: bool = True) -> ActionSpace:
