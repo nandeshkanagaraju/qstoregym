@@ -41,7 +41,7 @@ def log_end(success: bool, steps: int, score: float, rewards: List[float]) -> No
 
 
 def clamp_score(score: float) -> float:
-    return max(0.0, min(1.0, float(score)))
+    return max(0.001, min(0.999, float(score)))
 
 
 def build_llm_client() -> OpenAI:
@@ -195,7 +195,7 @@ def run_episode(
     if norm_env is not None:
         norm_env.close()
 
-    success = final_score > 0.0
+    success = final_score > 0.005
     log_end(success=success, steps=step_index, score=final_score, rewards=rewards_list)
 
     summary = {

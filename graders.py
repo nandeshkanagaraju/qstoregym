@@ -68,7 +68,7 @@ def run_episode(task_name: str, policy: PolicyFn, seed: int, verbose: bool = Fal
         "seed": float(seed),
         "steps": float(steps),
         "reward": total_reward,
-        "score": max(0.0, min(1.0, final_score)),
+        "score": max(0.001, min(0.999, final_score)),
         "net_profit": float(env.total_net_profit),
         "waste_value": float(env.total_waste_value),
     }
@@ -83,7 +83,7 @@ def grade_task(task_name: str, policy: PolicyFn = deterministic_baseline_policy,
         "episodes": episodes,
         "mean_score": statistics.mean(scores) if scores else 0.0,
         "std_score": statistics.stdev(scores) if len(scores) > 1 else 0.0,
-        "score_range_valid": all(0.0 <= score <= 1.0 for score in scores),
+        "score_range_valid": all(0.0 < score < 1.0 for score in scores),
     }
 
 
