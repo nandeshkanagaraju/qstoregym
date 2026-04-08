@@ -224,7 +224,8 @@ def main() -> int:
     tasks = [args.task] if args.task else AVAILABLE_TASKS
     seeds: List[int] = [args.seed + offset for offset in range(args.episodes)]
 
-    model_name = os.environ.get("MODEL_NAME")
+    # Rely on the globally initialized fallback if the proxy environment omits the target model
+    model_name = MODEL_NAME
     try:
         client = build_llm_client()
     except Exception as e:
