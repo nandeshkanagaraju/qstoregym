@@ -74,8 +74,12 @@ def _load_ppo(task_name: str, curriculum: bool = False):
     else:
         norm_env = raw_env
 
-    model = PPO.load(model_path, env=norm_env)
-    return model, norm_env
+    try:
+        model = PPO.load(model_path, env=norm_env)
+        return model, norm_env
+    except Exception as exc:
+        print(f"[DEBUG] Graceful degradation: Failed to load PPO artifact {model_path} ({exc})", flush=True)
+        return None, None
 
 
 def llm_policy(client: OpenAI, model_name: str, observation: ObservationSpace) -> ActionSpace:
